@@ -20,9 +20,8 @@
 
 namespace abu {
 
-// abu::tuple
-// It's exactly like std::tuple, but can be used as a structural type
-
+// my_stuff::tuple
+// It's (almost) exactly like std::tuple, but can be used as a structural type
 namespace details_ {
 template <class T>
 struct unwrap_refwrapper {
@@ -74,7 +73,7 @@ template <std::size_t I, typename Seq, typename... Ts>
 struct maybe_tuple_element<I,
                            tuple_<Seq, Ts...>,
                            std::enable_if_t<(I >= sizeof...(Ts))>>
-    : std::type_identity<void> {};
+    : std::type_identity<int> {};
 
 template <std::size_t I, typename Tuple>
 using maybe_tuple_element_t = typename maybe_tuple_element<I, Tuple>::type;
@@ -221,9 +220,12 @@ constexpr auto operator<=>(
   return perform_tuple_compare<0, sizeof...(Ts), result_type>(lhs, rhs);
 }
 
-template<typename T>
-concept DefaultListConstructible = requires { 
-  [](T) {}({});
+template <typename T>
+void list_constructible_check(T) {}
+
+template <typename T>
+concept DefaultListConstructible = requires {
+  list_constructible_check<T>({});
 };
 }  // namespace details_
 template <typename... Ts>
@@ -233,8 +235,8 @@ struct tuple
   using impl_type =
       details_::tuple_<std::make_index_sequence<sizeof...(Ts)>, Ts...>;
 
-
-  static constexpr bool expl_1 = !(details_::DefaultListConstructible<Ts> && ...);
+  static constexpr bool expl_1 =
+      !(details_::DefaultListConstructible<Ts> && ...);
   static constexpr bool expl_2 = !(std::is_convertible_v<const Ts&, Ts> && ...);
 
   template <typename... Us>
@@ -305,9 +307,9 @@ struct tuple
   template <class U1, class U2>
   constexpr explicit(expl_6<U1, U2>) tuple(const std::pair<U1, U2>& p) requires(
       sizeof...(Ts) == 2 &&
-      std::is_constructible_v<details_::tuple_element_t<0, impl_type>,
+      std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
                               const U1&> &&
-      std::is_constructible_v<details_::tuple_element_t<1, impl_type>,
+      std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
                               const U2&>)
       : impl_type{p.first, p.second} {}
 
@@ -315,8 +317,10 @@ struct tuple
   template <class U1, class U2>
   constexpr explicit(expl_7<U1, U2>) tuple(std::pair<U1, U2>&& p) requires(
       sizeof...(Ts) == 2 &&
-      std::is_constructible_v<details_::tuple_element_t<0, impl_type>, U1&&> &&
-      std::is_constructible_v<details_::tuple_element_t<1, impl_type>, U2&&>)
+      std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
+                              U1&&> &&
+      std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
+                              U2&&>)
       : impl_type{std::forward<U1>(p.first), std::forward<U2>(p.second)} {}
 
   // constructor (8)
@@ -357,9 +361,9 @@ struct tuple
   template <typename U1, typename U2>
   constexpr tuple& operator=(const std::pair<U1, U2>& p) requires(
       sizeof...(Ts) == 2 &&
-      std::is_assignable_v<details_::tuple_element_t<0, impl_type>&,
+      std::is_assignable_v<details_::maybe_tuple_element_t<0, impl_type>&,
                            const U1&> &&
-      std::is_assignable_v<details_::tuple_element_t<1, impl_type>&,
+      std::is_assignable_v<details_::maybe_tuple_element_t<1, impl_type>&,
                            const U2&>) {
     get<0>(*this) = p.first;
     get<1>(*this) = p.second;
@@ -370,8 +374,18 @@ struct tuple
   template <typename U1, typename U2>
   constexpr tuple& operator=(std::pair<U1, U2>&& p) requires(
       sizeof...(Ts) == 2 &&
-      std::is_assignable_v<details_::tuple_element_t<0, impl_type>&, U1> &&
-      std::is_assignable_v<details_::tuple_element_t<1, impl_type>&, U2>) {
+      std::is_assignable_v<
+          details_::maybe_tuple_element_t<
+              0,
+              details_::tuple_<std::make_index_sequence<sizeof...(Ts)>,
+                               Ts...>>&,
+          U1> &&
+      std::is_assignable_v<
+          details_::maybe_tuple_element_t<
+              1,
+              details_::tuple_<std::make_index_sequence<sizeof...(Ts)>,
+                               Ts...>>&,
+          U2>) {
     get<0>(*this) = std::forward<U1>(p.first);
     get<1>(*this) = std::forward<U2>(p.second);
 
@@ -446,12 +460,12 @@ struct tuple_cat_merger<tuple<LhsTs...>, tuple<RhsTs...>> {
 }  // namespace details_
 
 template <typename... Tups>
-constexpr tuple<> tuple_cat(Tups&&... args) {
+constexpr tuple<> tuple_cat(Tups&&...) {
   return {};
 }
 
 template <typename First, typename... Tups>
-constexpr First tuple_cat(First&& first, Tups&&... rest) {
+constexpr First tuple_cat(First&& first, Tups&&...) {
   return std::forward<First>(first);
 }
 
@@ -507,6 +521,7 @@ constexpr const auto& get(const tuple<Ts...>&& t) noexcept {
   return details_::get<T>(std::move(t));
 }
 
+// comparisons
 template <typename... Ts, typename... Us>
 constexpr bool operator==(const tuple<Ts...>& lhs, const tuple<Us...>& rhs) {
   return static_cast<
@@ -542,19 +557,17 @@ struct tuple_element<I, tuple<Ts...>>
     : details_::tuple_element<
           I,
           details_::tuple_<std::make_index_sequence<sizeof...(Ts)>, Ts...>> {};
-
 }  // namespace abu
-
 
 // In order to allow structured bindings
 namespace std {
 template <typename... Ts>
-struct tuple_size<::abu::tuple<Ts...>> : 
-  ::abu::tuple_size<::abu::tuple<Ts...>> {};
+struct tuple_size<::abu::tuple<Ts...>>
+    : ::abu::tuple_size<::abu::tuple<Ts...>> {};
 
 template <std::size_t I, typename... Ts>
 struct tuple_element<I, ::abu::tuple<Ts...>>
     : abu::tuple_element<I, ::abu::tuple<Ts...>> {};
+}  // namespace std
 
-}
 #endif
