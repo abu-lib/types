@@ -1,4 +1,4 @@
-# abu::mem
+# abu::types
 
 [![CI](https://github.com/abu-lib/types/actions/workflows/ci.yml/badge.svg)](https://github.com/abu-lib/types/actions/workflows/ci.yml)
 
