@@ -144,7 +144,10 @@ struct tuple_<std::index_sequence<Is...>, Ts...> : tuple_leaf<Is, Ts>... {
                           (sizeof...(Ts) != 1 ||
                            (!(std::is_convertible_v<const tuple_<Us>&, Ts> &&
                               ...) &&
-                            !(std::is_constructible_v<Ts, const tuple_<Us>&> &&
+                            !(std::is_constructible_v<
+                                  Ts,
+                                  const tuple_<std::index_sequence<Is...>,
+                                               Us>&> &&
                               ...) &&
                             !(std::is_same_v<Ts, Us> && ...))))
       : tuple_leaf<Is, Ts>{Ts(get<Is>(other))}... {}
@@ -157,7 +160,10 @@ struct tuple_<std::index_sequence<Is...>, Ts...> : tuple_leaf<Is, Ts>... {
                           (std::is_constructible_v<Ts, Us&&> && ...) &&
                           (sizeof...(Ts) != 1 ||
                            (!(std::is_convertible_v<tuple_<Us>, Ts> && ...) &&
-                            !(std::is_constructible_v<Ts, tuple_<Us>> && ...) &&
+                            !(std::is_constructible_v<
+                                  Ts,
+                                  tuple_<std::index_sequence<Is...>, Us>> &&
+                              ...) &&
                             !(std::is_same_v<Ts, Us> && ...))))
       : tuple_leaf<Is, Ts>{std::move(get<Is>(other))}... {}
 
@@ -227,6 +233,11 @@ template <typename T>
 concept DefaultListConstructible = requires {
   list_constructible_check<T>({});
 };
+
+template <typename T>
+struct is_default_list_constructible
+    : std::integral_constant<bool, DefaultListConstructible<T>> {};
+
 }  // namespace details_
 template <typename... Ts>
 struct tuple
@@ -235,47 +246,24 @@ struct tuple
   using impl_type =
       details_::tuple_<std::make_index_sequence<sizeof...(Ts)>, Ts...>;
 
-  static constexpr bool expl_1 =
-      !(details_::DefaultListConstructible<Ts> && ...);
-  static constexpr bool expl_2 = !(std::is_convertible_v<const Ts&, Ts> && ...);
-
-  template <typename... Us>
-  static constexpr bool expl_3 = !(std::is_convertible_v<Us&&, Ts> && ...);
-
-  template <typename... Us>
-  static constexpr bool expl_4 = !(std::is_convertible_v<const Us&, Ts> && ...);
-
-  template <typename... Us>
-  static constexpr bool expl_5 = !(std::is_convertible_v<Us, Ts> && ...);
-
-  template <typename U1, typename U2>
-  static constexpr bool expl_6 =
-      !std::is_convertible_v<const U1&,
-                             details_::maybe_tuple_element_t<0, impl_type>> ||
-      !std::is_convertible_v<const U2&,
-                             details_::maybe_tuple_element_t<1, impl_type>>;
-
-  template <typename U1, typename U2>
-  static constexpr bool expl_7 =
-      !std::is_convertible_v<U1&&,
-                             details_::maybe_tuple_element_t<0, impl_type>> ||
-      !std::is_convertible_v<U2&&,
-                             details_::maybe_tuple_element_t<1, impl_type>>;
-
  public:
   // constructor (1)
-  constexpr explicit(expl_1)
+  constexpr explicit(
+      sizeof...(Ts) != 0 &&
+      !std::conjunction_v<details_::is_default_list_constructible<Ts>...>)
       tuple() requires(std::is_default_constructible_v<Ts>&&...)
       : impl_type{} {}
 
   // constructor (2)
-  constexpr explicit(expl_2) tuple(const Ts&... args) requires(
-      sizeof...(Ts) >= 1 && (std::is_copy_constructible_v<Ts> && ...))
+  constexpr explicit(!std::conjunction_v<std::is_convertible<const Ts&, Ts>...>)
+      tuple(const Ts&... args) requires(sizeof...(Ts) >= 1 &&
+                                        (std::is_copy_constructible_v<Ts> &&
+                                         ...))
       : impl_type{args...} {}
 
   // constructor (3)
   template <typename... Us>
-  constexpr explicit(expl_3<Us...>)
+  constexpr explicit(!std::conjunction_v<std::is_convertible<Us&&, Ts>...>)
       tuple(Us&&... args) requires(sizeof...(Ts) >= 1 &&
                                    sizeof...(Us) == sizeof...(Ts) &&
                                    (std::is_constructible_v<Ts, Us&&> && ...))
@@ -283,44 +271,56 @@ struct tuple
 
   // constructor (4)
   template <typename... Us>
-  constexpr explicit(expl_4<Us...>) tuple(const tuple<Us...>& other) requires(
-      sizeof...(Ts) >= 1 && sizeof...(Us) == sizeof...(Ts) &&
-      (std::is_constructible_v<Ts, const Us&> && ...) &&
-      (sizeof...(Ts) != 1 ||
-       (!(std::is_convertible_v<const tuple<Us>&, Ts> && ...) &&
-        !(std::is_constructible_v<Ts, const tuple<Us>&> && ...) &&
-        !(std::is_same_v<Ts, Us> && ...))))
+  constexpr explicit(!std::conjunction_v<std::is_convertible<const Us&, Ts>...>)
+      tuple(const tuple<Us...>& other) requires(
+          sizeof...(Ts) >= 1 && sizeof...(Us) == sizeof...(Ts) &&
+          (std::is_constructible_v<Ts, const Us&> && ...) &&
+          (sizeof...(Ts) != 1 ||
+           (!(std::is_convertible_v<const tuple<Us>&, Ts> && ...) &&
+            !(std::is_constructible_v<Ts, const tuple<Us>&> && ...) &&
+            !(std::is_same_v<Ts, Us> && ...))))
       : impl_type{other} {}
 
   // constructor (5)
   template <typename... Us>
-  constexpr explicit(expl_5<Us...>) tuple(const tuple<Us...>&& other) requires(
-      sizeof...(Ts) >= 1 && sizeof...(Us) == sizeof...(Ts) &&
-      (std::is_constructible_v<Ts, Us&&> && ...) &&
-      (sizeof...(Ts) != 1 ||
-       (!(std::is_convertible_v<tuple<Us>, Ts> && ...) &&
-        !(std::is_constructible_v<Ts, tuple<Us>> && ...) &&
-        !(std::is_same_v<Ts, Us> && ...))))
+  constexpr explicit(!std::conjunction_v<std::is_convertible<Us, Ts>...>)
+      tuple(const tuple<Us...>&& other) requires(
+          sizeof...(Ts) >= 1 && sizeof...(Us) == sizeof...(Ts) &&
+          (std::is_constructible_v<Ts, Us&&> && ...) &&
+          (sizeof...(Ts) != 1 ||
+           (!(std::is_convertible_v<tuple<Us>, Ts> && ...) &&
+            !(std::is_constructible_v<Ts, tuple<Us>> && ...) &&
+            !(std::is_same_v<Ts, Us> && ...))))
       : impl_type{std::move(other)} {}
 
   // constructor (6)
   template <class U1, class U2>
-  constexpr explicit(expl_6<U1, U2>) tuple(const std::pair<U1, U2>& p) requires(
-      sizeof...(Ts) == 2 &&
-      std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
-                              const U1&> &&
-      std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
-                              const U2&>)
+  constexpr explicit(
+      !std::is_convertible_v<const U1&,
+                             details_::maybe_tuple_element_t<0, impl_type>> ||
+      !std::is_convertible_v<const U2&,
+                             details_::maybe_tuple_element_t<1, impl_type>>)
+      tuple(const std::pair<U1, U2>& p) requires(
+          sizeof...(Ts) == 2 &&
+          std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
+                                  const U1&> &&
+          std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
+                                  const U2&>)
       : impl_type{p.first, p.second} {}
 
   // constructor (7)
   template <class U1, class U2>
-  constexpr explicit(expl_7<U1, U2>) tuple(std::pair<U1, U2>&& p) requires(
-      sizeof...(Ts) == 2 &&
-      std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
-                              U1&&> &&
-      std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
-                              U2&&>)
+  constexpr explicit(
+      !std::is_convertible_v<U1&&,
+                             details_::maybe_tuple_element_t<0, impl_type>> ||
+      !std::is_convertible_v<U2&&,
+                             details_::maybe_tuple_element_t<1, impl_type>>)
+      tuple(std::pair<U1, U2>&& p) requires(
+          sizeof...(Ts) == 2 &&
+          std::is_constructible_v<details_::maybe_tuple_element_t<0, impl_type>,
+                                  U1&&> &&
+          std::is_constructible_v<details_::maybe_tuple_element_t<1, impl_type>,
+                                  U2&&>)
       : impl_type{std::forward<U1>(p.first), std::forward<U2>(p.second)} {}
 
   // constructor (8)
@@ -461,7 +461,7 @@ struct tuple_cat_merger<tuple<LhsTs...>, tuple<RhsTs...>> {
 
 template <typename... Tups>
 constexpr tuple<> tuple_cat(Tups&&...) {
-  return {};
+  return tuple<>{};
 }
 
 template <typename First, typename... Tups>

@@ -15,6 +15,15 @@
 #ifndef ABU_TYPES_H_INCLUDED
 #define ABU_TYPES_H_INCLUDED
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-attributes"
+#endif
+
 #include "types/tuple.h"
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #endif
